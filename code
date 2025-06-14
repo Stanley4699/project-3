@@ -1,0 +1,62 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+import pickle
+from math import radians, sin, cos, sqrt, atan2
+
+url = 'https://drive.google.com/uc?id=1VUb9ucTsroGDBOPcwpOfXwzDi-rd4wqQ'
+try:
+    df = pd.read_csv(url)
+    print("✅ Dataset loaded successfully")
+except Exception as e:
+    print("❌ Failed to load dataset:", e)
+    exit()
+
+df.dropna(subset=[
+    'total_amount', 'passenger_count',
+    'tpep_pickup_datetime', 'pickup_latitude', 'pickup_longitude',
+    'dropoff_latitude', 'dropoff_longitude'
+], inplace=True)
+
+df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime'])
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    return R * c
+
+df['trip_distance'] = df.apply(lambda row: haversine(
+    row['pickup_latitude'], row['pickup_longitude'],
+    row['dropoff_latitude'], row['dropoff_longitude']), axis=1)
+
+df['pickup_hour'] = df['tpep_pickup_datetime'].dt.hour
+df['is_weekend'] = (df['tpep_pickup_datetime'].dt.dayofweek >= 5).astype(int)
+df['is_night'] = ((df['pickup_hour'] >= 22) | (df['pickup_hour'] <= 5)).astype(int)
+features = ['trip_distance', 'passenger_count', 'pickup_hour', 'is_weekend', 'is_night']
+X = df[features]
+y = df['total_amount']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model = RandomForestRegressor(random_state=42)
+model.fit(X_train, y_train)
+
+
+y_pred = model.predict(X_test)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+r2 = r2_score(y_test, y_pred)
+
+print(f"📊 RMSE: {rmse:.2f}")
+print(f"📈 R² Score: {r2:.2f}")
+
+
+with open('model.pkl', 'wb') as f:
+    pickle.dump(model, f)
+
+print("✅ Model trained and saved as 'model.pkl'")
